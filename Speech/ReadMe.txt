@@ -2,4 +2,4 @@ This code takes voice input from the main microphone in use by the computer, and
 
 To do this, the program takes a 2 second clip of all audio input, processes it, monitors it for a "wake up" word/phrase (essentially, a phrase that induces an action out of the robot like "grab pen") and runs the program for the robot to perform the indicated action. After the action is performed, the program resets and continues listening for another command.
 
-Currently, the 
+Currently, the program does not have the robotic movement function. However, the speech output is still functional. The program has four commands pulled from its command library. They are: "grab pen" "grab marker" "grab eraser" and "grab pencil".
