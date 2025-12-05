@@ -7,16 +7,72 @@ import math
 # User Parameters
 # -----------------------------------------------------------
 
-IMAGE_FOLDER = "./new_calibration_data/*.jpg"
-POSE_FILE = "./new_calibration_data/robot_poses.txt"
+IMAGE_FOLDER = "./12_4_imgs/*.jpg"
+POSE_FILE = "robot_poses_12_4.txt"
 
 CHECKERBOARD = (9, 7)    # inner corners (width, height)
 SQUARE_SIZE = 0.019      # meters
-
+'''
 camera_matrix = np.array([[1000, 0, 640],
                           [0, 1000, 360],
                           [0, 0, 1]], dtype=np.float64)
+'''
 dist_coeffs = np.zeros(5)
+
+# -----------------------------------------------------------
+# Calibrate Camera
+# -----------------------------------------------------------
+
+
+def calibrate_camera(image_folder):
+    print("\n=== CAMERA CALIBRATION ===")
+
+    objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
+    objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1,2)
+    objp *= SQUARE_SIZE
+
+    objpoints = []
+    imgpoints = []
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+    images = sorted(glob.glob(image_folder))
+    if len(images) == 0:
+        raise RuntimeError("No images found for camera calibration.")
+
+    for fname in images:
+        img = cv2.imread(fname)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
+        if ret:
+            objpoints.append(objp)
+            corners2 = cv2.cornerSubPix(
+                gray, corners, (11,11), (-1,-1), criteria
+            )
+            imgpoints.append(corners2)
+            #print(f"  ✓ Chessboard detected in {fname}")
+        else:
+            print(f"  ✗ Chessboard NOT found in {fname}")
+
+    print("\nCalibrating...")
+
+    flags = cv2.CALIB_RATIONAL_MODEL
+
+    ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(
+        objpoints, imgpoints, gray.shape[::-1], None, None, flags=flags
+    )
+
+    print("\n=== Camera Calibration Results ===")
+    print("Camera Matrix K:\n", K)
+    print("Distortion Coeffs:", dist.ravel())
+    print("Reprojection Error:", ret)
+
+    np.savez("camera_calibration.npz", K=K, dist=dist)
+    print("\nSaved camera calibration to camera_calibration.npz\n")
+
+    return K, dist
+
 
 # -----------------------------------------------------------
 # RPY -> Rotation for uFactory 850 (extrinsic XYZ)
@@ -49,7 +105,7 @@ def rpy_to_rot_xyz(roll, pitch, yaw):
     # Extrinsic rotations:
     # Final rotation = Rz(yaw) * Ry(pitch) * Rx(roll)
     # This gives the rotation of the gripper in the base frame (R_bg)
-    return Rz @ Ry @ Rx
+    return Rx @ Ry @ Rz
 
 
 # -----------------------------------------------------------
@@ -107,6 +163,7 @@ t_target2cam = []
 # -----------------------------------------------------------
 # Process each image
 # -----------------------------------------------------------
+camera_matrix, dist_coeffs = calibrate_camera(IMAGE_FOLDER)
 
 for idx, img_file in enumerate(image_files):
     print(f"Processing image: {img_file}")
@@ -124,21 +181,28 @@ for idx, img_file in enumerate(image_files):
         gray, corners, (11, 11), (-1, -1),
         (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.01)
     )
-
+   
     # SolvePnP (object -> camera) 
     # solvePnP X_cam = R_cam_obj * X_obj + t_cam_obj -> this gives us the values for rvec and tvec
     # r_vec and t_vec represent the transformation from object to camera (rotation and translation)
     _, rvec, tvec = cv2.solvePnP(objp, corners, camera_matrix, dist_coeffs)
     R_cam_obj, _ = cv2.Rodrigues(rvec)
 
+    # R_cam_obj: Rotation from Target frame to Camera frame (R_c_t)
+    R_target2cam.append(R_cam_obj)
+    
+    # tvec: Translation from Target frame to Camera frame (t_c_t)
+    t_target2cam.append(tvec)
+
+    '''
     # Convert camera->object into object->camera
     # To do this we need to invert the camera to object transformation
     R_obj_cam = R_cam_obj.T
     t_obj_cam = -R_cam_obj.T @ tvec
 
-    R_target2cam.append(R_obj_cam)
-    t_target2cam.append(t_obj_cam)
-
+    R_target2cam.append(R_cam_obj)  # R_c_t
+    t_target2cam.append(tvec)      # t_c_t
+    '''
     # Robot pose (base -> gripper)
     x, y, z, roll, pitch, yaw = robot_poses[idx]
 
@@ -147,12 +211,9 @@ for idx, img_file in enumerate(image_files):
     # t_bg = Gripper translation in base frame
     t_bg = np.array([[x/1000], [y/1000], [z/1000]])  # convert mm→m
 
-    # Invert for OpenCV (gripper -> base)
-    R_g2b = R_bg.T
-    t_g2b = -R_bg.T @ t_bg
 
-    R_gripper2base.append(R_g2b)
-    t_gripper2base.append(t_g2b)
+    R_gripper2base.append(R_bg)
+    t_gripper2base.append(t_bg)
 
 
 # -----------------------------------------------------------
@@ -174,7 +235,7 @@ R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(
 
 print("\n=== Final Camera-to-Gripper Transform ===")
 print("Rotation matrix:\n", R_cam2gripper)
-print("\nTranslation (mm):\n", (t_cam2gripper * 1000).flatten())
+print("\nTranslation (m):\n", (t_cam2gripper).flatten())
 
 np.savez("handeye_result.npz", R=R_cam2gripper, t=t_cam2gripper)
 print("\nSaved handeye_result.npz")
@@ -182,15 +243,15 @@ print("\nSaved handeye_result.npz")
 
 print("Robot pose R_bg:\n", R_bg)
 print("Robot pose t_bg (m):", t_bg.flatten())
-print("Gripper->base R_g2b:\n", R_g2b)
-print("Gripper->base t_g2b (m):", t_g2b.flatten())
+print("Gripper->base R_g2b:\n", R_bg)
+print("Gripper->base t_g2b (m):", t_bg.flatten())
 
 print("Determinant:", np.linalg.det(R_cam2gripper))
 print("Orthogonality error:", np.linalg.norm(R_cam2gripper @ R_cam2gripper.T - np.eye(3)))
 
 
 # Optional: Undistort an example image
-example_img = cv2.imread(image_files[5])
+example_img = cv2.imread(image_files[0])
 h, w = example_img.shape[:2]
 new_camera_mtx, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, dist_coeffs, (w,h), 1, (w,h))
 undistorted = cv2.undistort(example_img, camera_matrix, dist_coeffs, None, new_camera_mtx)
