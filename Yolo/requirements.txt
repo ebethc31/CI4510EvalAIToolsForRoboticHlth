@@ -1,2 +1,4 @@
 ultralytics
 opencv-python
+numpy
+pyrealsense2
