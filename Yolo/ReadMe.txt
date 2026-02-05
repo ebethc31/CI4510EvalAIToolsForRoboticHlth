@@ -10,9 +10,10 @@ YOLO stream - adjusted version of YOLO stream old which takes in feed from the c
 
 
 Conda installation instructions
+
 1. Create a new conda env
-Open a terminal and type 
-`conda create -n yolo python=3.12`
+Open a terminal and change directory to the Yolo folder. 
+`conda create -n yolo python=3.10 pip`
 
 2. Activate the environment
 `conda activate yolo`
