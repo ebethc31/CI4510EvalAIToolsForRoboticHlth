@@ -120,6 +120,7 @@ with open(csv_filename, mode="w", newline="") as file:
     writer.writerow([
         "capture_id",
         "hand_index",
+        "hand_label",
         "landmark_index",
         "x",
         "y",
@@ -168,7 +169,8 @@ while True:
                     cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
 
                 # Draw handedness text
-                handedness = result.handedness[hand_index][0].category_name
+                detected_hand = result.handedness[hand_index][0].category_name
+
                 if detected_hand == "Left":
                     handedness = "Right"
                 else:
@@ -229,6 +231,15 @@ while True:
 
                     hand_points = []
 
+                    # Fix handedness for mirrored camera
+                    detected_hand = (
+                        last_result.handedness[hand_index][0].category_name
+                    )
+                    if detected_hand == "Left":
+                        corrected_hand = "Right"
+                    else:
+                        corrected_hand = "Left"
+        
                     for landmark_index, landmark in enumerate(hand_landmarks):
 
                         # Save to NumPy structure
@@ -242,7 +253,7 @@ while True:
                         writer.writerow([
                             capture_id,
                             hand_index,
-                            hand_label,
+                            corrected_hand,
                             landmark_index,
                             landmark.x,
                             landmark.y,
