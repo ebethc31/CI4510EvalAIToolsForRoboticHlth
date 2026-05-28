@@ -288,5 +288,6 @@ print("NumPy file: hand_landmarks.npy")
 print("CSV file: hand_landmarks.csv")
 print("Images folder: Data/")
 
+# hello 
 cap.release()
 cv2.destroyAllWindows()
