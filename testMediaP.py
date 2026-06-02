@@ -77,6 +77,7 @@ import mediapipe as mp
 import numpy as np
 import csv
 import os
+import pyrealsense2 as rs
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -99,7 +100,24 @@ options = vision.HandLandmarkerOptions(
 detector = vision.HandLandmarker.create_from_options(options)
 
 # Webcam
-cap = cv2.VideoCapture(0)
+#cap = cv2.VideoCapture(3,cv2.CAP_DSHOW)
+
+# Intel RealSense Camera
+
+pipeline = rs.pipeline()
+config = rs.config()
+
+# Enable depth stream
+config.enable_stream(
+    rs.stream.depth,
+    1280,
+    720,
+    rs.format.z16,
+    30
+)
+
+# Start camera
+pipeline.start(config)
 
 video_running = True
 paused_frame = None
@@ -130,10 +148,33 @@ with open(csv_filename, mode="w", newline="") as file:
 while True:
 
     if video_running:
-        success, frame = cap.read()
+        #success, frame = cap.read()
 
-        if not success:
-            break
+        #if not success:
+        #    break
+
+        # Get frames from RealSense
+        frames = pipeline.wait_for_frames()
+
+        depth_frame = frames.get_depth_frame()
+
+        if not depth_frame:
+            continue
+
+        # Convert depth frame to NumPy array
+        depth_image = np.asanyarray(depth_frame.get_data())
+
+        # Convert depth to visible image 
+        depth_colormap = cv2.convertScaleAbs(
+            depth_image,
+            alpha=0.03
+        )
+
+         # Convert grayscale --> BGR
+        frame = cv2.cvtColor(
+            depth_colormap,
+            cv2.COLOR_GRAY2BGR
+        )
 
         # Mirror image
         frame = cv2.flip(frame, 1)
@@ -141,8 +182,11 @@ while True:
         # Save frame for pause screen
         paused_frame = frame.copy()
 
-        # Convert BGR -> RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Convert BGR --> RGB
+        rgb_frame = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2RGB
+        )
 
         # Convert to MediaPipe image
         mp_image = mp.Image(
@@ -288,5 +332,8 @@ print("NumPy file: hand_landmarks.npy")
 print("CSV file: hand_landmarks.csv")
 print("Images folder: Data/")
 
-cap.release()
+#cap.release()
+#cv2.destroyAllWindows()
+
+pipeline.stop()
 cv2.destroyAllWindows()
