@@ -94,7 +94,10 @@ base_options = python.BaseOptions(
 
 options = vision.HandLandmarkerOptions(
     base_options=base_options,
-    num_hands=2
+    num_hands=2,
+    min_hand_detection_confidence = 0.15,
+    min_hand_presence_confidence = 0.15,
+    min_tracking_confidence = 0.15
 )
 
 detector = vision.HandLandmarker.create_from_options(options)
@@ -161,18 +164,59 @@ while True:
         if not depth_frame:
             continue
 
+        # Depth to MediaPipe image
+
         # Convert depth frame to NumPy array
         depth_image = np.asanyarray(depth_frame.get_data())
-
-        # Convert depth to visible image 
-        depth_colormap = cv2.convertScaleAbs(
-            depth_image,
-            alpha=0.03
+        print(
+            "Min:",
+            np.min(depth_image),
+            "Max:",
+            np.max(depth_image),
+            "Center:",
+            depth_image[360, 640]
         )
 
-         # Convert grayscale --> BGR
+        # Keep close-range objects
+        min_depth_mm = 20
+        max_depth_mm = 800
+
+        depth_mask = (
+            (depth_image > min_depth_mm) &
+            (depth_image < max_depth_mm)
+        )
+
+        # Create clean binary image
+        hand_mask = np.zeros_like(
+            depth_image,
+            dtype = np.uint8
+        )
+
+        hand_mask[depth_mask] = 255
+
+        # Clean up npise 
+        kernel = np.ones((5, 5), np.uint8)
+
+        hand_mask = cv2.morphologyEx(
+            hand_mask,
+            cv2.MORPH_OPEN,
+            kernel
+        )
+
+        hand_mask = cv2.morphologyEx(
+            hand_mask,
+            cv2.MORPH_CLOSE,
+            kernel
+        )
+
+        hand_mask = cv2.GaussianBlur(
+            hand_mask,
+            (5, 5),
+            0
+        )
+
         frame = cv2.cvtColor(
-            depth_colormap,
+            hand_mask,
             cv2.COLOR_GRAY2BGR
         )
 
@@ -182,7 +226,30 @@ while True:
         # Save frame for pause screen
         paused_frame = frame.copy()
 
-        # Convert BGR --> RGB
+        gray = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        clahe = cv2.createCLAHE(
+            clipLimit = 2.0,
+            tileGridSize = (8, 8)
+        )
+        
+        enhanced = clahe.apply(gray)
+
+        # Show raw depth image
+        depth_visual = cv2.convertScaleAbs(
+        depth_image,
+        alpha=0.03
+        )
+
+        frame = cv2.applyColorMap(
+            depth_visual,
+            cv2.COLORMAP_JET
+        )
+        
+
         rgb_frame = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2RGB
