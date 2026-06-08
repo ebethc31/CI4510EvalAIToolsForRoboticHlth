@@ -122,6 +122,25 @@ config.enable_stream(
 # Start camera
 pipeline.start(config)
 
+# Noise filters
+spatial = rs.spatial_filter()
+temporal = rs.temporal_filter()
+hole_filling = rs.hole_filling_filter()
+
+# Spatial smoothing
+spatial.set_option(
+    rs.option.filter_magnitude,
+    5
+)
+spatial.set_option(
+    rs.option.filter_smooth_alpha,
+    0.5
+)
+spatial.set_option(
+    rs.option.filter_smooth_delta,
+    20
+)
+
 video_running = True
 paused_frame = None
 last_result = None
@@ -151,10 +170,6 @@ with open(csv_filename, mode="w", newline="") as file:
 while True:
 
     if video_running:
-        #success, frame = cap.read()
-
-        #if not success:
-        #    break
 
         # Get frames from RealSense
         frames = pipeline.wait_for_frames()
@@ -164,22 +179,23 @@ while True:
         if not depth_frame:
             continue
 
-        # Depth to MediaPipe image
-
-        # Convert depth frame to NumPy array
-        depth_image = np.asanyarray(depth_frame.get_data())
-        print(
-            "Min:",
-            np.min(depth_image),
-            "Max:",
-            np.max(depth_image),
-            "Center:",
-            depth_image[360, 640]
+        # RealSense filtering
+        filtered_depth = spatial.process(
+            depth_frame
+        )
+        filtered_depth = temporal.process(
+            filtered_depth
+        )
+        filtered_depth = hole_filling.process(
+            filtered_depth
         )
 
-        # Keep close-range objects
-        min_depth_mm = 20
-        max_depth_mm = 800
+        # Convert depth frame to NumPy array
+        depth_image = np.asanyarray(filtered_depth.get_data())
+
+        # Remove background
+        min_depth_mm = 1
+        max_depth_mm = 1000
 
         depth_mask = (
             (depth_image > min_depth_mm) &
@@ -187,36 +203,79 @@ while True:
         )
 
         # Create clean binary image
-        hand_mask = np.zeros_like(
+        binary = np.zeros_like(
             depth_image,
-            dtype = np.uint8
+           dtype = np.uint8
         )
 
-        hand_mask[depth_mask] = 255
+        binary[depth_mask] = 255
 
         # Clean up npise 
-        kernel = np.ones((5, 5), np.uint8)
+        kernel = np.ones((7, 7), np.uint8)
 
-        hand_mask = cv2.morphologyEx(
-            hand_mask,
+        binary = cv2.morphologyEx(
+            binary,
             cv2.MORPH_OPEN,
             kernel
         )
 
-        hand_mask = cv2.morphologyEx(
-            hand_mask,
+        binary = cv2.morphologyEx(
+            binary,
             cv2.MORPH_CLOSE,
             kernel
         )
 
-        hand_mask = cv2.GaussianBlur(
-            hand_mask,
-            (5, 5),
+        binary = cv2.medianBlur(
+            binary,
+            7
+        )
+
+        binary = cv2.GaussianBlur(
+            binary,
+            (7, 7),
+            0
+        )
+
+        # Keep largest contour 
+        contours, _ = cv2.findContours(
+            binary,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        clean_mask = np.zeros_like(
+            binary
+        )
+
+        if contours:
+            largest = max(
+                contours,
+                key=cv2.contourArea
+            )
+            
+            area = cv2.contourArea(
+                largest
+            )
+
+            # Ignore small noise
+            if area > 300:
+                cv2.drawContours(
+                    clean_mask,
+                    [largest],
+                    -1,
+                    255,
+                    thickness=cv2.FILLED
+                )
+        
+        # Smooth edges
+        clean_mask = cv2.GaussianBlur(
+            clean_mask,
+            (9, 9),
             0
         )
 
         frame = cv2.cvtColor(
-            hand_mask,
+            clean_mask,
             cv2.COLOR_GRAY2BGR
         )
 
@@ -232,27 +291,26 @@ while True:
         )
 
         clahe = cv2.createCLAHE(
-            clipLimit = 2.0,
+            clipLimit = 3.0,
             tileGridSize = (8, 8)
         )
         
         enhanced = clahe.apply(gray)
 
-        # Show raw depth image
-        depth_visual = cv2.convertScaleAbs(
-        depth_image,
-        alpha=0.03
+        # Use enhanced image
+        frame = cv2.cvtColor(
+            enhanced,
+            cv2.COLOR_GRAY2BGR
         )
-
-        frame = cv2.applyColorMap(
-            depth_visual,
-            cv2.COLORMAP_JET
-        )
-        
 
         rgb_frame = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2RGB
+        )
+
+        cv2.imshow(
+            "Processed input to MediaPipe",
+            frame
         )
 
         # Convert to MediaPipe image
