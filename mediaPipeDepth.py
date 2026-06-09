@@ -14,7 +14,7 @@ import pyrealsense2 as rs
 
 capture_count = 0
 
-def save_capture(color_img, depth_img, results, count):
+def save_capture(color_img, depth_img, depth_frame, results, count):
     """Saves images and writes landmark data to disk."""
     # Ensure directory exists
     os.makedirs("captures", exist_ok=True)
@@ -42,8 +42,18 @@ def save_capture(color_img, depth_img, results, count):
             #         handedness = "Left"
             
             for l_idx, lm in enumerate(hand_landmarks):
-                hand_points.append([lm.x, lm.y, lm.z])
-                writer.writerow([count, h_idx, handedness, l_idx, lm.x, lm.y, lm.z])
+                # Convert normalized coordinates --> pixel coordinates
+                x_pixel = int(lm.x * color_img.shape[1])
+                y_pixel = int(lm.y * color_img.shape[0])
+
+                # Prevent out of bounds indexing
+                x_pixel = np.clip(x_pixel, 0, color_img.shape[1] - 1)
+                y_pixel = np.clip(y_pixel, 0, color_img.shape[0] - 1)
+
+                # Get depth in meters 
+                depth_meters = depth_frame.get_distance(x_pixel, y_pixel)
+                hand_points.append([lm.x, lm.y, lm.z, depth_meters])
+                writer.writerow([count, h_idx, handedness, l_idx, lm.x, lm.y, lm.z, x_pixel, y_pixel, depth_meters])
                 
     np.save(f"captures/landmarks_{count}.npy", np.array(hand_points))
     print(f"Captured data set {count} saved.")
@@ -70,9 +80,9 @@ colorizer = rs.colorizer()
 
 cv2.namedWindow("RealSense: Detection")
 
-with open("captures/landmarks.csv", "w", newline='') as f:
+with open("landmarks.csv", "w", newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(["capture_id", "hand_index", "handedness", "landmark_idx", "x", "y", "z"])
+    writer.writerow(["capture_id", "hand_index", "handedness", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters"])
 
 try:
     while True:
@@ -93,7 +103,7 @@ try:
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s') and result.hand_landmarks:
             capture_count += 1
-            save_capture(color_image, depth_image, result, capture_count)
+            save_capture(color_image, depth_image, depth_frame, result, capture_count)
         
         elif key == ord('q'):
             break
