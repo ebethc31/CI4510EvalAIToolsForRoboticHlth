@@ -14,7 +14,7 @@ import pyrealsense2 as rs
 
 capture_count = 0
 
-def save_capture(color_img, depth_img, depth_frame, results, count):
+def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, count):
     """Saves images and writes landmark data to disk."""
     # Ensure directory exists
     os.makedirs("captures", exist_ok=True)
@@ -52,8 +52,19 @@ def save_capture(color_img, depth_img, depth_frame, results, count):
 
                 # Get depth in meters 
                 depth_meters = depth_frame.get_distance(x_pixel, y_pixel)
-                hand_points.append([lm.x, lm.y, lm.z, depth_meters])
-                writer.writerow([count, h_idx, handedness, l_idx, lm.x, lm.y, lm.z, x_pixel, y_pixel, depth_meters])
+
+                # Convert pixel + depth --> 3D camera coordinates
+                point_3d = rs.rs2_deproject_pixel_to_point(
+                    depth_intrinsics,
+                    [x_pixel, y_pixel],
+                    depth_meters
+                )
+                x_meters = point_3d[0]
+                y_meters = point_3d[1]
+                z_meters = point_3d[2]
+
+                hand_points.append([x_meters, y_meters, x_meters, depth_meters])
+                writer.writerow([count, h_idx, handedness, l_idx, lm.x, lm.y, lm.z, x_pixel, y_pixel, depth_meters, x_meters, y_meters, z_meters])
                 
     np.save(f"captures/landmarks_{count}.npy", np.array(hand_points))
     print(f"Captured data set {count} saved.")
@@ -75,14 +86,19 @@ config = rs.config()
 config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 pipeline.start(config)
+profile = pipeline.get_active_profile()
+
+depth_profile = rs.video_stream_profile(
+    profile.get_stream(rs.stream.depth))
+depth_intrinsics = depth_profile.get_intrinsics()
 align = rs.align(rs.stream.color)
 colorizer = rs.colorizer()
 
 cv2.namedWindow("RealSense: Detection")
 
-with open("landmarks.csv", "w", newline='') as f:
+with open("captures/landmarks.csv", "w", newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(["capture_id", "hand_index", "handedness", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters"])
+    writer.writerow(["capture_id", "hand_index", "handedness", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
 
 try:
     while True:
@@ -103,7 +119,7 @@ try:
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s') and result.hand_landmarks:
             capture_count += 1
-            save_capture(color_image, depth_image, depth_frame, result, capture_count)
+            save_capture(color_image, depth_image, depth_frame, depth_intrinsics, result, capture_count)
         
         elif key == ord('q'):
             break
