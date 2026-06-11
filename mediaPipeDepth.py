@@ -41,6 +41,8 @@ def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, c
             #     else:
             #         handedness = "Left"
             
+            gesture = detect_thumb_gesture(hand_landmarks)
+
             for l_idx, lm in enumerate(hand_landmarks):
                 # Convert normalized coordinates --> pixel coordinates
                 x_pixel = int(lm.x * color_img.shape[1])
@@ -64,7 +66,7 @@ def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, c
                 z_meters = point_3d[2]
 
                 hand_points.append([x_meters, y_meters, x_meters, depth_meters])
-                writer.writerow([count, h_idx, handedness, l_idx, lm.x, lm.y, lm.z, x_pixel, y_pixel, depth_meters, x_meters, y_meters, z_meters])
+                writer.writerow([count, h_idx, handedness, gesture, l_idx, lm.x, lm.y, lm.z, x_pixel, y_pixel, depth_meters, x_meters, y_meters, z_meters])
                 
     np.save(f"captures/landmarks_{count}.npy", np.array(hand_points))
     print(f"Captured data set {count} saved.")
@@ -98,7 +100,29 @@ cv2.namedWindow("RealSense: Detection")
 
 with open("captures/landmarks.csv", "w", newline='') as f:
     writer = csv.writer(f)
-    writer.writerow(["capture_id", "hand_index", "handedness", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
+    writer.writerow(["capture_id", "hand_index", "handedness", "gesture", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
+
+def detect_thumb_gesture(hand_landmarks):
+
+    # Knuckle landmarks 
+    index_mcp = hand_landmarks[5]
+    pinky_mcp = hand_landmarks[17]
+
+    # Direction vector
+    dx = pinky_mcp.x - index_mcp.x 
+    dy = pinky_mcp.y - index_mcp.y
+
+    # Threshold
+    threshold = 0.08
+
+    # Thumbs up
+    if abs(dx) > abs(dy) and abs(dx) > threshold:
+        return "THUMB UP"
+
+    # Thumb sideways
+    if abs(dy) > abs(dx) and abs(dy) > threshold:
+        return "THUMB SIDE"
+    return "UNKNOWN"
 
 try:
     while True:
@@ -126,11 +150,35 @@ try:
 
         # Draw landmarks
         if result.hand_landmarks:
+            for h_idx, hand_landmarks in enumerate(
+                result.hand_landmarks):
+
+                # Detect gesture 
+                gesture = detect_thumb_gesture(hand_landmarks)
+
             for hand_landmarks in result.hand_landmarks:
                 for landmark in hand_landmarks:
                     x = int(landmark.x * 640)
                     y = int(landmark.y * 480)
                     cv2.circle(color_image, (x, y), 5, (0, 255, 0), -1)
+                
+                # Wrist position label
+                wrist = hand_landmarks[0]
+
+                wrist_x = int(float(wrist.x) * color_image.shape[1])
+                wrist_y = int(float(wrist.y) * color_image.shape[0])
+
+                text_position = (int(wrist_x), int(wrist_y - 20))
+
+                cv2.putText(
+                    color_image,
+                    str(gesture),
+                    text_position,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (0, 255, 255),
+                    2
+                )
 
         # Depth visualization
         depth_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
