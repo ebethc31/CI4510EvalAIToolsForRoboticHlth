@@ -117,11 +117,11 @@ def detect_thumb_gesture(hand_landmarks):
 
     # Thumbs up
     if abs(dx) > abs(dy) and abs(dx) > threshold:
-        return "THUMB UP"
+        return "THUMB SIDE"
 
     # Thumb sideways
     if abs(dy) > abs(dx) and abs(dy) > threshold:
-        return "THUMB SIDE"
+        return "THUMB UP"
     return "UNKNOWN"
 
 try:
