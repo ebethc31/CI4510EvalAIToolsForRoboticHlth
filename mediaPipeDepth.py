@@ -7,6 +7,7 @@ import numpy as np
 import csv
 import os
 import pyrealsense2 as rs
+import math
 
 # --- INITIALIZE MEDIAPIPE & REALSENSE ---
 # (Initialization code same as previous step...)
@@ -103,53 +104,60 @@ with open("captures/landmarks.csv", "w", newline='') as f:
     writer.writerow(["capture_id", "hand_index", "handedness", "gesture", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
 
 def detect_hand_gesture(hand_landmarks):
+    def dist(a, b):
+        return math.sqrt(
+            (a.x - b.x) ** 2 +
+            (a.y - b.y) ** 2
+        )
+
+    wrist = hand_landmarks[0]
 
     # Finger extension detection
-    index_open = (
-        hand_landmarks[8].y < 
-        hand_landmarks[6].y
-    )
+    finger_pairs = [
+        (8, 6), # index
+        (12, 10), # middle
+        (16, 14), # ring
+        (20, 18) # pinky
+    ]
 
-    middle_open = (
-        hand_landmarks[12].y <
-        hand_landmarks[10].y
-    )
+    open_fingers = 0
 
-    ring_open = (
-        hand_landmarks[16].y <
-        hand_landmarks[14].y
-    )
+    for tip_idx, pip_idx in finger_pairs:
+        tip = hand_landmarks[tip_idx]
+        pip = hand_landmarks[pip_idx]
 
-    pinky_open = (
-        hand_landmarks[20].y <
-        hand_landmarks[18].y
-    )
+        tip_dist = dist(tip, wrist)
+        pip_dist = dist(pip, wrist)
 
-    thumb_open = (
-        abs(hand_landmarks[4].x - hand_landmarks[2].x) > 0.04
-    )
+        if tip_dist > pip_dist * 1.15:
+            open_fingers += 1
+        
+        # Thumb extension
+        thumb_tip = hand_landmarks[4]
+        thumb_ip = hand_landmarks[3]
 
-    fingers_open = sum([
-        thumb_open,
-        index_open,
-        middle_open,
-        ring_open,
-        pinky_open
-    ])
+        thumb_tip_dist = dist(
+            thumb_tip,
+            wrist
+        )
+
+        thumb_ip_dist = dist(
+            thumb_ip,
+            wrist
+        )
+
+        thumb_open = (
+            thumb_tip_dist >
+            thumb_ip_dist * 1.10
+        )
+
+        total_open = open_fingers + int(thumb_open)
 
     # Closed hand
-    if fingers_open <= 1:
+    if open_fingers <= 1 and not thumb_open:
         return "CLOSED HAND"
-    
-    # Open hand detection
-    is_open_hand = (
-        index_open and
-        middle_open and 
-        ring_open and 
-        pinky_open
-    )
 
-    if is_open_hand:
+    if open_fingers >= 3:
         # Knuckle landmarks 
         index_mcp = hand_landmarks[5]
         pinky_mcp = hand_landmarks[17]
@@ -163,12 +171,14 @@ def detect_hand_gesture(hand_landmarks):
         vertical_ratio = abs(dy) / (abs(dx) + epsilon)
 
         # Fingers mostly horizontal, thumb up
-        if horizontal_ratio > 1.3:
-            return "OPEN HAND THUMB UP"
+        if horizontal_ratio > 1.2:
+            return "OPEN HAND THUMB SIDE" # Code seems to get thumb and side mixed up, so I just switched the labels
         # Fingers mostly vertical, thumb sideways
-        if vertical_ratio > 1.3:
-            return "OPEN HAND THUMB SIDE"
-        return "UNKNOWN"
+        if vertical_ratio > 1.2:
+            return "OPEN HAND THUMB UP"
+        return "OPEN HAND"
+    return "UNKNOWN"
+
 
 try:
     while True:
