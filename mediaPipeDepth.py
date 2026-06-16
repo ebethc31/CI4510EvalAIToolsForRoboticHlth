@@ -41,7 +41,7 @@ def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, c
             #     else:
             #         handedness = "Left"
             
-            gesture = detect_thumb_gesture(hand_landmarks)
+            gesture = detect_hand_gesture(hand_landmarks)
 
             for l_idx, lm in enumerate(hand_landmarks):
                 # Convert normalized coordinates --> pixel coordinates
@@ -102,27 +102,73 @@ with open("captures/landmarks.csv", "w", newline='') as f:
     writer = csv.writer(f)
     writer.writerow(["capture_id", "hand_index", "handedness", "gesture", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
 
-def detect_thumb_gesture(hand_landmarks):
+def detect_hand_gesture(hand_landmarks):
 
-    # Knuckle landmarks 
-    index_mcp = hand_landmarks[5]
-    pinky_mcp = hand_landmarks[17]
+    # Finger extension detection
+    index_open = (
+        hand_landmarks[8].y < 
+        hand_landmarks[6].y
+    )
 
-    # Direction vector
-    dx = pinky_mcp.x - index_mcp.x 
-    dy = pinky_mcp.y - index_mcp.y
+    middle_open = (
+        hand_landmarks[12].y <
+        hand_landmarks[10].y
+    )
 
-    # Threshold
-    threshold = 0.08
+    ring_open = (
+        hand_landmarks[16].y <
+        hand_landmarks[14].y
+    )
 
-    # Thumbs up
-    if abs(dx) > abs(dy) and abs(dx) > threshold:
-        return "THUMB SIDE"
+    pinky_open = (
+        hand_landmarks[20].y <
+        hand_landmarks[18].y
+    )
 
-    # Thumb sideways
-    if abs(dy) > abs(dx) and abs(dy) > threshold:
-        return "THUMB UP"
-    return "UNKNOWN"
+    thumb_open = (
+        abs(hand_landmarks[4].x - hand_landmarks[2].x) > 0.04
+    )
+
+    fingers_open = sum([
+        thumb_open,
+        index_open,
+        middle_open,
+        ring_open,
+        pinky_open
+    ])
+
+    # Closed hand
+    if fingers_open <= 1:
+        return "CLOSED HAND"
+    
+    # Open hand detection
+    is_open_hand = (
+        index_open and
+        middle_open and 
+        ring_open and 
+        pinky_open
+    )
+
+    if is_open_hand:
+        # Knuckle landmarks 
+        index_mcp = hand_landmarks[5]
+        pinky_mcp = hand_landmarks[17]
+
+        # Direction vector
+        dx = pinky_mcp.x - index_mcp.x 
+        dy = pinky_mcp.y - index_mcp.y
+
+        epsilon = 1e-6
+        horizontal_ratio = abs(dx) / (abs(dy) + epsilon)
+        vertical_ratio = abs(dy) / (abs(dx) + epsilon)
+
+        # Fingers mostly horizontal, thumb up
+        if horizontal_ratio > 1.3:
+            return "OPEN HAND THUMB UP"
+        # Fingers mostly vertical, thumb sideways
+        if vertical_ratio > 1.3:
+            return "OPEN HAND THUMB SIDE"
+        return "UNKNOWN"
 
 try:
     while True:
@@ -154,7 +200,7 @@ try:
                 result.hand_landmarks):
 
                 # Detect gesture 
-                gesture = detect_thumb_gesture(hand_landmarks)
+                gesture = detect_hand_gesture(hand_landmarks)
 
             for hand_landmarks in result.hand_landmarks:
                 for landmark in hand_landmarks:
