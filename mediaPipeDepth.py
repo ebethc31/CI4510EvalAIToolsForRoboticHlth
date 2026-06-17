@@ -236,6 +236,23 @@ try:
                     2
                 )
 
+                # Wrist depth
+                wrist_px = np.clip(wrist_x, 0, color_image.shape[1] - 1)
+                wrist_py = np.clip(wrist_y, 0, color_image.shape[0] - 1)
+
+                wrist_depth = depth_frame.get_distance(wrist_px, wrist_py)
+
+                cv2.putText(
+                    color_image,
+                    f"Depth: {wrist_depth:.3f} m",
+                    (wrist_x, wrist_y + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 0),
+                    2
+                )
+            
+
         # Depth visualization
         depth_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
         
