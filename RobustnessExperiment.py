@@ -42,6 +42,8 @@ successful_stops = 0
 false_gives = 0
 false_stops = 0
 
+print_counter = 0
+
 def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, count):
     """Saves images and writes landmark data to disk."""
     # Ensure directory exists
@@ -69,7 +71,7 @@ def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, c
             #     else:
             #         handedness = "Left"
             
-            gesture = detect_hand_gesture(hand_landmarks)
+            gesture = detect_hand_gesture(hand_landmarks. handedness)
 
             for l_idx, lm in enumerate(hand_landmarks):
                 # Convert normalized coordinates --> pixel coordinates
@@ -130,7 +132,7 @@ with open("captures/landmarks.csv", "w", newline='') as f:
     writer = csv.writer(f)
     writer.writerow(["capture_id", "hand_index", "handedness", "gesture", "landmark_idx", "x_norm", "y_norm", "z_norm", "x_pixel", "y_pixel", "depth_meters", "x_meters", "y_meters", "z_meters"])
 
-def detect_hand_gesture(hand_landmarks):
+def detect_hand_gesture(hand_landmarks, handedness):
     def dist(a, b):
         return math.sqrt(
             (a.x - b.x) ** 2 +
@@ -138,6 +140,35 @@ def detect_hand_gesture(hand_landmarks):
         )
 
     wrist = hand_landmarks[0]
+
+    # Determine whether palm or back of hand faces camera
+    index_mcp = hand_landmarks[5]
+    pinky_mcp = hand_landmarks[17]
+
+    v1 = np.array([
+        index_mcp.x - wrist.x,
+        index_mcp.y - wrist.y,
+        index_mcp.z - wrist.z
+    ])
+
+    v2 = np.array([
+        pinky_mcp.x - wrist.x,
+        pinky_mcp.y - wrist.y,
+        pinky_mcp.z - wrist.z
+    ])
+
+    hand_normal = np.cross(v1, v2)
+
+    back_of_hand = False
+
+    # Sign flips depending on handedness
+    if handedness == "Right":
+        if hand_normal[2] > 0:
+            back_of_hand = True
+
+    elif handedness == "Left":
+        if hand_normal[2] < 0:
+            back_of_hand = True
 
     # Finger extension detection
     finger_pairs = [
@@ -193,6 +224,10 @@ def detect_hand_gesture(hand_landmarks):
 
     if closed_fingers >= 3:
         return "CLOSED HAND"
+    
+    # Open hand with back facing camera --> stop
+    if back_of_hand and open_fingers >= 3:
+        return "BACK OF HAND"
 
     if open_fingers >= 3:
         # Knuckle landmarks 
@@ -267,8 +302,9 @@ try:
             for h_idx, hand_landmarks in enumerate(
                 result.hand_landmarks):
 
-                # Detect gesture 
-                gesture = detect_hand_gesture(hand_landmarks)
+                # Detect gesture
+                handedness = result.handedness[h_idx][0].category_name
+                gesture = detect_hand_gesture(hand_landmarks, handedness)
 
                 # Safety-first command logic
                 if gesture.startswith("OPEN HAND"):
@@ -343,6 +379,51 @@ try:
                 wrist_py = np.clip(wrist_y, 0, color_image.shape[0] - 1)
 
                 wrist_depth = depth_frame.get_distance(wrist_px, wrist_py)
+
+                # Landmark 9 (middle finger MCP joint)
+                lm9 = hand_landmarks[9]
+
+                lm9_x_pixel = int(lm9.x * color_image.shape[1])
+                lm9_y_pixel = int(lm9.y * color_image.shape[0])
+
+                # Prevent out-of-bounds indexing
+                lm9_x_pixel = np.clip(
+                    lm9_x_pixel,
+                    0,
+                    color_image.shape[1] - 1
+                )
+
+                lm9_y_pixel = np.clip(
+                    lm9_y_pixel,
+                    0,
+                    color_image.shape[0] - 1
+                )
+
+                # Depth at landmark 9
+                lm9_depth = depth_frame.get_distance(
+                    lm9_x_pixel,
+                    lm9_y_pixel
+                )
+
+                # Convert pixel + depth to 3D camera coordinates
+                lm9_3d = rs.rs2_deproject_pixel_to_point(
+                    depth_intrinsics,
+                    [lm9_x_pixel, lm9_y_pixel],
+                    lm9_depth
+                )
+
+                lm9_x_m = lm9_3d[0]
+                lm9_y_m = lm9_3d[1]
+                lm9_z_m = lm9_3d[2]
+
+                print_counter += 1
+                if print_counter % 15 == 0:
+                    print(
+                        f"LM9: "
+                        f"X={lm9_x_m:.3f} m, "
+                        f"Y={lm9_y_m:.3f} m, "
+                        f"Z={lm9_z_m:.3f} m"
+                    )
 
                 cv2.putText(
                     color_image,
