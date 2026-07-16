@@ -380,51 +380,6 @@ try:
 
                 wrist_depth = depth_frame.get_distance(wrist_px, wrist_py)
 
-                # Landmark 9 (middle finger MCP joint)
-                lm9 = hand_landmarks[9]
-
-                lm9_x_pixel = int(lm9.x * color_image.shape[1])
-                lm9_y_pixel = int(lm9.y * color_image.shape[0])
-
-                # Prevent out-of-bounds indexing
-                lm9_x_pixel = np.clip(
-                    lm9_x_pixel,
-                    0,
-                    color_image.shape[1] - 1
-                )
-
-                lm9_y_pixel = np.clip(
-                    lm9_y_pixel,
-                    0,
-                    color_image.shape[0] - 1
-                )
-
-                # Depth at landmark 9
-                lm9_depth = depth_frame.get_distance(
-                    lm9_x_pixel,
-                    lm9_y_pixel
-                )
-
-                # Convert pixel + depth to 3D camera coordinates
-                lm9_3d = rs.rs2_deproject_pixel_to_point(
-                    depth_intrinsics,
-                    [lm9_x_pixel, lm9_y_pixel],
-                    lm9_depth
-                )
-
-                lm9_x_m = lm9_3d[0]
-                lm9_y_m = lm9_3d[1]
-                lm9_z_m = lm9_3d[2]
-
-                print_counter += 1
-                if print_counter % 15 == 0:
-                    print(
-                        f"LM9: "
-                        f"X={lm9_x_m:.3f} m, "
-                        f"Y={lm9_y_m:.3f} m, "
-                        f"Z={lm9_z_m:.3f} m"
-                    )
-
                 cv2.putText(
                     color_image,
                     f"Depth: {wrist_depth:.3f} m",
@@ -445,6 +400,51 @@ try:
         depth_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
         
         if robustness_mode:
+            if result.hand_landmarks:
+                # Landmark 9 (middle finger MCP joint)
+                    lm9 = hand_landmarks[9]
+
+                    lm9_x_pixel = int(lm9.x * color_image.shape[1])
+                    lm9_y_pixel = int(lm9.y * color_image.shape[0])
+
+                    # Prevent out-of-bounds indexing
+                    lm9_x_pixel = np.clip(
+                        lm9_x_pixel,
+                        0,
+                        color_image.shape[1] - 1
+                    )
+
+                    lm9_y_pixel = np.clip(
+                        lm9_y_pixel,
+                        0,
+                        color_image.shape[0] - 1
+                    )
+
+                    # Depth at landmark 9
+                    lm9_depth = depth_frame.get_distance(
+                        lm9_x_pixel,
+                        lm9_y_pixel
+                    )
+
+                    # Convert pixel + depth to 3D camera coordinates
+                    lm9_3d = rs.rs2_deproject_pixel_to_point(
+                        depth_intrinsics,
+                        [lm9_x_pixel, lm9_y_pixel],
+                        lm9_depth
+                    )
+
+                    lm9_x_m = lm9_3d[0]
+                    lm9_y_m = lm9_3d[1]
+                    lm9_z_m = lm9_3d[2]
+
+                    print_counter += 1
+                    if print_counter % 15 == 0:
+                        print(
+                            f"LM9: "
+                            f"X={lm9_x_m:.3f} m, "
+                            f"Y={lm9_y_m:.3f} m, "
+                            f"Z={lm9_z_m:.3f} m"
+                        )
 
             cv2.putText(
                 color_image,
