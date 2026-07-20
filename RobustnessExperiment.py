@@ -7,6 +7,7 @@ import csv
 import os
 import pyrealsense2 as rs
 import math
+import time
 
 # --- INITIALIZE MEDIAPIPE & REALSENSE ---
 # (Initialization code same as previous step...)
@@ -43,6 +44,11 @@ false_gives = 0
 false_stops = 0
 
 print_counter = 0
+
+# Landmark 9 averaging variables
+lm9_positions = []
+lm9_start_time = None
+average_ready = False
 
 def save_capture(color_img, depth_img, depth_frame, depth_intrinsics, results, count):
     """Saves images and writes landmark data to disk."""
@@ -400,51 +406,85 @@ try:
         depth_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
         
         if robustness_mode:
-            if result.hand_landmarks:
+            if result.hand_landmarks and robot_move:
+
                 # Landmark 9 (middle finger MCP joint)
-                    lm9 = hand_landmarks[9]
+                lm9 = hand_landmarks[9]
 
-                    lm9_x_pixel = int(lm9.x * color_image.shape[1])
-                    lm9_y_pixel = int(lm9.y * color_image.shape[0])
+                lm9_x_pixel = int(lm9.x * color_image.shape[1])
+                lm9_y_pixel = int(lm9.y * color_image.shape[0])
 
-                    # Prevent out-of-bounds indexing
-                    lm9_x_pixel = np.clip(
-                        lm9_x_pixel,
-                        0,
-                        color_image.shape[1] - 1
+                # Prevent out-of-bounds indexing
+                lm9_x_pixel = np.clip(
+                    lm9_x_pixel,
+                    0,
+                    color_image.shape[1] - 1
+                )
+
+                lm9_y_pixel = np.clip(
+                    lm9_y_pixel,
+                    0,
+                    color_image.shape[0] - 1
+                )
+
+                # Depth at landmark 9
+                lm9_depth = depth_frame.get_distance(
+                    lm9_x_pixel,
+                    lm9_y_pixel
+                )
+
+                # Convert pixel + depth to 3D camera coordinates
+                lm9_3d = rs.rs2_deproject_pixel_to_point(
+                    depth_intrinsics,
+                    [lm9_x_pixel, lm9_y_pixel],
+                    lm9_depth
+                )
+
+                # Start collecting 3D coordinates
+
+                if lm9_start_time is None:
+                    lm9_start_time = time.time()
+                    lm9_positions = []
+                    average_ready = False
+
+                lm9_positions.append(lm9_3d)
+
+                elapsed = time.time() - lm9_start_time
+
+                # Optional: still print live coordinates every 15 frames
+                print_counter += 1
+
+                if print_counter % 15 == 0:
+                    print(
+                        f"LM9: "
+                        f"X={lm9_3d[0]:.3f} m, "
+                        f"Y={lm9_3d[1]:.3f} m, "
+                        f"Z={lm9_3d[2]:.3f} m"
                     )
 
-                    lm9_y_pixel = np.clip(
-                        lm9_y_pixel,
-                        0,
-                        color_image.shape[0] - 1
-                    )
+                # Compute average after 2 seconds
 
-                    # Depth at landmark 9
-                    lm9_depth = depth_frame.get_distance(
-                        lm9_x_pixel,
-                        lm9_y_pixel
-                    )
+                if elapsed >= 2.0 and not average_ready:
 
-                    # Convert pixel + depth to 3D camera coordinates
-                    lm9_3d = rs.rs2_deproject_pixel_to_point(
-                        depth_intrinsics,
-                        [lm9_x_pixel, lm9_y_pixel],
-                        lm9_depth
-                    )
+                    lm9_array = np.array(lm9_positions)
 
-                    lm9_x_m = lm9_3d[0]
-                    lm9_y_m = lm9_3d[1]
-                    lm9_z_m = lm9_3d[2]
+                    avg_x = np.mean(lm9_array[:, 0])
+                    avg_y = np.mean(lm9_array[:, 1])
+                    avg_z = np.mean(lm9_array[:, 2])
 
-                    print_counter += 1
-                    if print_counter % 15 == 0:
-                        print(
-                            f"LM9: "
-                            f"X={lm9_x_m:.3f} m, "
-                            f"Y={lm9_y_m:.3f} m, "
-                            f"Z={lm9_z_m:.3f} m"
-                        )
+                    print("\n========== TARGET POSITION ==========")
+                    print(f"Average X = {avg_x:.3f} m")
+                    print(f"Average Y = {avg_y:.3f} m")
+                    print(f"Average Z = {avg_z:.3f} m")
+                    print("=====================================\n")
+
+                    average_ready = True
+
+            else:
+                # Lost hand or robot not authorized
+                lm9_start_time = None
+                lm9_positions = []
+                average_ready = False
 
             cv2.putText(
                 color_image,
