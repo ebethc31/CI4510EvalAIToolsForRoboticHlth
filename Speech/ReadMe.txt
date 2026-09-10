@@ -17,3 +17,10 @@ BENEFITS:
   1. The program registers full commands and half commands, allowing users to see where the program heard each command. The program also outputs all conversation heard.
 
   2. Conversation heard is not stored in any place besides the terminal, and is only used for the processing of commands, rendering the program as safe for private conversation. After the program is silenced, the terminal history is wiped.
+
+
+TASKS:
+
+  1. Improve overall accuracy either by using a better microphone.
+
+  2. Research how to integrate PyCharm/Python code into a Ross Node.
