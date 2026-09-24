@@ -24,3 +24,5 @@ TASKS:
   1. Improve overall accuracy either by using a better microphone.
 
   2. Research how to integrate PyCharm/Python code into a Ross Node.
+
+  3. Attempt to find a better speech to text AI than Whisper.
