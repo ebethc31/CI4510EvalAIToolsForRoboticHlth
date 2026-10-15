@@ -1,0 +1,14 @@
+{
+  "grab": [
+    "grab",
+    "pick up",
+    "get",
+    "hand"
+  ],
+  "drop": [
+    "drop",
+    "give",
+    "let go",
+    "release"
+  ]
+}

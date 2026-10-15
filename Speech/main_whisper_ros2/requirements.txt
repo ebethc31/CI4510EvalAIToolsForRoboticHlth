@@ -1,0 +1,4 @@
+numpy
+webrtcvad
+sounddevice
+moonshine-voice
